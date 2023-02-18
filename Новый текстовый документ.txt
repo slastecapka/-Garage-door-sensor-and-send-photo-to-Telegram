@@ -1,0 +1,119 @@
+sudo apt-get update
+sudo apt-get upgrade
+sudo apt-get install libreadline-dev libconfig-dev libssl-dev lua5.2 liblua5.2-dev libevent-dev make
+sudo apt-get install motion
+sudo nano /home/pi/tg.sh
+#!/bin/bash
+  to=$1
+  msg=$2
+  tgpath=/home/pi/tg
+  cd ${tgpath}
+  (echo "msg $to $msg"; echo "safe_quit") | ${tgpath}/bin/telegram-cli -k tg-server.pub -W
+sudo chmod -R 0655 /home/pi/tg.sh
+sudo nano /home/pi/tg_photo.sh
+#!/bin/bash
+  to=$1
+  msg=$2
+  tgpath=/home/pi/tg
+  cd ${tgpath}
+  (echo "send_photo $to $msg"; echo "safe_quit") | ${tgpath}/bin/telegram-cli -k tg-server.pub -W
+sudo chmod -R 0655 /home/pi/tg_photo.sh
+sudo nano /home/pi/tg/action.lua
+function on_msg_receive (msg)
+      if msg.out then
+          return
+      end
+      if (msg.text=='ping') then
+         send_msg (msg.from.print_name, 'pong', ok_cb, false)
+      end
+  end 
+  function on_our_id (id)
+  end  
+  function on_secret_chat_created (peer)
+  end
+  function on_user_update (user)
+  end 
+  function on_chat_update (user)
+  end
+  function on_get_difference_end ()
+  end
+  function on_binlog_replay_end ()
+if (msg.text=='photo') then
+     os.execute('/home/pi/camera/camera.sh')
+     send_photo (msg.from.print_name, '/home/pi/camera/photo.jpg', ok_cb, false)
+  end
+cd /home/pi/tg
+#!/bin/bash  
+  raspistill -w 800 -h 600 -o /home/pi/camera/photo.jpg 
+sudo chmod -R 0655 /home/pi/camera/camera.sh
+sudo nano /home/pi/tg/action.lua
+
+bin/telegram-cli -k tg-server.pub -W -s action.lua
+sudo nano /etc/motion/motion.conf
+daemon on
+webcontrol_localhost off
+sudo nano /etc/default/motion
+start_motion_daemon=yes
+sudo nano /etc/rc.local
+_IP=$(hostname -I) || true
+if [ "$_IP" ]; then
+printf "My IP address is %s\n" "$_IP"
+fi
+# Start motion
+motion
+exit 
+#include <SPI.h>
+#include <Ethernet.h>
+char buf[80]; // Массив для строки запроса
+char ipbuff[16]; // Массив для строки ip-адреса
+int old_garage=0; // Переменная состояния
+// MAC-адрес нашего устройства
+byte mac[] = { 0xDE, 0xAD, 0xBE, 0xEF, 0xFE, 0xED };
+byte ip[] = { 192, 168, 10, 120 }; // ip-адрес модуля
+byte subnet[] = { 255, 255, 255, 0 }; // Маска подсети
+byte gateway[] = { 192, 168, 10, 1 }; // ip-адрес шлюза
+byte dns_server[] = { 192, 168, 10, 1 }; // ip-сервера DNS
+// ip-адрес удалённого сервера (Raspberry Pi)
+byte server[] = { 192, 168, 10, 127 };
+EthernetClient rclient;
+// Функция отправки HTTP-запроса на сервер
+void sendHTTPRequest() {
+Serial.println(buf);
+if (rclient.connect(server, 80)) { // Соединение с сервером
+Serial.println("OK");
+rclient.println(buf);
+rclient.println("HOST: ");
+sprintf(ipbuff, "%u.%u.%u.%u", ip[0], ip[1], ip[2], ip[3]);
+rclient.println(ipbuff); // ip-адрес модуля
+rclient.println("Connection: clos\n");
+rclient.println();
+delay(2000);
+rclient.stop(); // Останавливаем клиента
+} else {
+Serial.println("FAILED");
+}
+void setup()
+{
+// Для отладки будем выводить сообщения на монитор порта
+Serial.begin(9600); // Скорость работы порта
+Serial.println("Start");
+//Ethernet.init(10); // Для большинства Arduino shields
+// Инициализируем Ethernet Shield
+Ethernet.begin(mac, ip, dns_server, gateway, subnet);
+pinMode(4, INPUT); // Вывод 4 на вход
+old_garage=digitalRead(4); // Читаем состояние датчика
+}
+void loop()
+{
+//Датчик гаражной двери
+Serial.println("G");
+int current_garage=digitalRead(4); // Читаем текущее состояние датчика гаражной двери
+// Если текущее и предыдущее значения не совпадают
+if (current_garage!=(int)old_garage) {
+old_garage=(int)current_garage; // Значение устарело
+// Строка для отправки запроса на изменение состояния
+sprintf(buf, "GET /objects/?object=garage&op=m&m=irsender&status=%i", (int)current_garage);
+sendHTTPRequest(); // Отправка запроса
+}
+delay(4000);
+}
